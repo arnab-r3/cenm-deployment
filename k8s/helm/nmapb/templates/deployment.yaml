@@ -1,0 +1,189 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "nmap.fullname" . }}
+  labels:
+    {{- include "nmap.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "nmap.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "nmap.selectorLabels" . | nindent 8 }}
+    spec:
+    {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+      serviceAccountName: {{ include "nmap.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      initContainers:
+        - name: init-token
+          env:
+            - name: ACCEPT_LICENSE
+              value: "{{required "You must accept the license agreement to use this software." .Values.acceptLicense }}"
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ required "nmap[cli]: missing value for .Values.dockerImageCli.repository" .Values.dockerImageCli.repository }}:{{ required "nmap[cli]: missing value for .Values.dockerImageCli.tag" .Values.dockerImageCli.tag }}"
+          imagePullPolicy: {{ .Values.dockerImageCli.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+          - |-
+            pwd
+            cp CM/*.conf etc/
+            cp CM/*.sh bin/
+            chmod +x bin/*
+            ls -alR
+            bin/create-network-parameters-file.sh
+            bin/getZoneToken.sh
+            bin/setupAuth.sh
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+          - name: nmap-etc
+            mountPath: /opt/cenm/etc
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/networkmap.conf
+            subPath: networkmap.conf
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/getZoneToken.sh
+            subPath: getZoneToken.sh
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/create-network-parameters-file.sh
+            subPath: create-network-parameters-file.sh
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/setupAuth.sh
+            subPath: setupAuth.sh
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/CASigner.json
+            subPath: CASigner.json
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/ConfigurationMaintainer.json
+            subPath: ConfigurationMaintainer.json
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/ConfigurationReader.json
+            subPath: ConfigurationReader.json
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/NetworkMaintainer.json
+            subPath: NetworkMaintainer.json
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/NetworkOperationsReader.json
+            subPath: NetworkOperationsReader.json
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/NetworkOperator.json
+            subPath: NetworkOperator.json
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM/role-assignments/NonCASigner.json
+            subPath: NonCASigner.json
+      containers:
+        - name: main
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ required "nmap[main]: missing value for .Values.image.repository" .Values.image.repository }}:{{ required "nmap[main]: missing value for .Values.image.tag" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+          - |-
+            cp -r CM-FILES/*.sh bin/
+            chmod +x bin/*
+            bin/run.sh
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            tcpSocket:
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: {{ .Values.livenessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.livenessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.livenessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.livenessProbe.successThreshold }}
+            failureThreshold: {{ .Values.livenessProbe.failureThreshold }}
+          {{- end  }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            tcpSocket:
+              port: {{ .Values.service.port }}
+            initialDelaySeconds: {{ .Values.readinessProbe.initialDelaySeconds }}
+            periodSeconds: {{ .Values.readinessProbe.periodSeconds }}
+            timeoutSeconds: {{ .Values.readinessProbe.timeoutSeconds }}
+            successThreshold: {{ .Values.readinessProbe.successThreshold }}
+            failureThreshold: {{ .Values.readinessProbe.failureThreshold }}
+          {{- end  }}
+          volumeMounts:
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM-FILES/networkmap.conf
+            subPath: networkmap.conf
+          - name: nmap-conf
+            mountPath: /opt/cenm/CM-FILES/run.sh
+            subPath: run.sh
+          - name: nmap-h2
+            mountPath: /opt/cenm/h2
+          - name: nmap-etc
+            mountPath: /opt/cenm/etc
+          - name: nmap-logs
+            mountPath: /opt/cenm/logs
+          - name: pki-certs-keys
+            mountPath: /opt/cenm/DATA
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- if .Values.logsContainersEnabled }}
+        - name: logs-nmap
+          image: "{{ required "nmap[logs]: missing value for .Values.image.repository" .Values.image.repository }}:{{ required "nmap[logs]: missing value for .Values.image.tag" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+          - |-
+            cd /opt/cenm/
+            while true; do tail -f logs/network-map/*.log 2>/dev/null; sleep 5; done
+            tail -f /dev/null
+          volumeMounts:
+          - name: nmap-logs
+            mountPath: /opt/cenm/logs
+        - name: logs-angel
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ required "nmap[logs]: missing value for .Values.image.repository" .Values.image.repository }}:{{ required "nmap[logs]: missing value for .Values.image.tag" .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          command: ["/bin/bash", "-c"]
+          args:
+          - |-
+            cd /opt/cenm/
+            while true; do tail -f logs/angel-service/*.log 2>/dev/null; sleep 5; done
+            # in case sth went wrong just wait indefinitely ...
+            tail -f /dev/null
+          volumeMounts:
+          - name: nmap-logs
+            mountPath: /opt/cenm/logs
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+        {{- end  }}
+      volumes:
+        - name: pki-certs-keys
+          persistentVolumeClaim:
+            claimName: cenm-pki-certs-keys
+        - name: nmap-etc
+          persistentVolumeClaim:
+            claimName: {{ .Values.prefix }}-nmap-etc
+        - name: nmap-logs
+          persistentVolumeClaim:
+            claimName: {{ .Values.prefix }}-nmap-logs
+        - name: nmap-h2
+          persistentVolumeClaim:
+            claimName: {{ .Values.prefix }}-nmap-h2
+        - name: nmap-conf
+          configMap:
+            name: {{ .Values.prefix }}-nmap-conf
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+    {{- end }}

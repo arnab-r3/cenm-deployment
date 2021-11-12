@@ -1,0 +1,12 @@
+# Default values for idman-ip.
+# This is a YAML-formatted file.
+# Declare variables to be passed into your templates.
+
+nameOverride: ""
+fullnameOverride: ""
+
+service:
+  type: LoadBalancer
+  port: 10000
+
+healthCheckNodePort: 0
