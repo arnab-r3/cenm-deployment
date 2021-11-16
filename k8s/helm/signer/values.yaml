@@ -161,6 +161,9 @@ serviceLocations:
   networkMap:
     host: nmap-internal
     port: 5050
+  networkMapB:
+    host: nmapb-internal
+    port: 5050
   revocation:
     port: 5053
 
