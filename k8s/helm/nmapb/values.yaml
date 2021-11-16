@@ -117,7 +117,7 @@ tolerations: []
 
 affinity: {}
 
-storageClass: cenmb
+storageClass: cenm
 
 healthCheckNodePort: 0
 
